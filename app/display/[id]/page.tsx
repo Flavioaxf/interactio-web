@@ -1,13 +1,3 @@
-// apps/display/app/session/[id]/page.tsx
-// Tela de Exibição (Telão) — Next.js 14 App Router (Client Component).
-//
-// Responsabilidades:
-//   1. listenSession()      → carrega estrutura da sessão (cards, meta)
-//   2. listenActiveCard()   → quando muda, atualiza qual card exibir
-//   3. listenResponses()    → contagem em tempo real para o gráfico
-//   4. Renderiza gráfico de barras (CSS puro, sem dependência extra)
-//   5. Renderiza nuvem de palavras (tamanho proporcional à frequência)
-
 'use client';
 
 import { useState, useEffect, useRef, useMemo } from 'react';

@@ -70,7 +70,7 @@ export default function Home() {
               {isJoining ? (
                 <div className="w-6 h-6 border-4 border-[#0f0e17]/30 border-t-[#0f0e17] rounded-full animate-spin"></div>
               ) : (
-                "Participar Agora"
+                "Participar"
               )}
             </button>
           </form>
