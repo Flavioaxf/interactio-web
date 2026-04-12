@@ -1,445 +1,171 @@
-// apps/participant/app/join/[code]/page.tsx
-// Interface do Participante — Next.js 14 App Router (Client Component).
-//
-// Fluxo:
-//   1. Usuário digita o código → resolveSessionCode() → sessionId
-//   2. signInAnon() → uid para identificar o voto
-//   3. joinSession() → registra presença com onDisconnect
-//   4. listenActiveCard() → escuta qual card está ativo
-//   5. Quando activeCardId muda → carrega o card e suas respostas
-//   6. submitResponse() → grava o voto com uid como chave (idempotente)
-
 'use client';
+import { useEffect, useState } from 'react';
+import { useParams } from 'next/navigation';
+import { getDatabase, ref, onValue, set } from 'firebase/database';
+import '../../../src/firebase'; 
 
-import { useState, useEffect, useCallback, useRef } from 'react';
-import {
-  resolveSessionCode,
-  signInAnon,
-  joinSession,
-  submitResponse,
-  listenActiveCard,
-  Refs,
-} from '../../../src/3_firebase';
-import { get } from 'firebase/database';
-import type { Card, CardOption, Response } from '../../../src/types';
-// ─────────────────────────────────────────────
-// Tipos locais da UI
-// ─────────────────────────────────────────────
+export default function ParticipantSession() {
+  const params = useParams();
+  const sessionId = typeof params.id === 'string' ? params.id.toUpperCase() : '';
 
-type Phase = 'enter_code' | 'loading' | 'waiting' | 'answering' | 'answered' | 'error';
+  const [loading, setLoading] = useState(true);
+  const [sessionData, setSessionData] = useState<any>(null);
+  const [participantId] = useState(() => 'aluno_' + Math.random().toString(36).substring(2, 10));
+  const [hasVoted, setHasVoted] = useState(false);
+  const [votedOption, setVotedOption] = useState<number | null>(null);
 
-interface ActiveCardState {
-  cardId:    string;
-  card:      Card;
-  myVote:    string | null; // optionId ou null
-}
+  useEffect(() => {
+    if (!sessionId) return;
+    const db = getDatabase();
+    const sessionRef = ref(db, `sessions/${sessionId}`);
 
-// ─────────────────────────────────────────────
-// Hook: gerencia toda a sessão do participante
-// ─────────────────────────────────────────────
-
-function useParticipantSession() {
-  const [phase,      setPhase]      = useState<Phase>('enter_code');
-  const [errorMsg,   setErrorMsg]   = useState('');
-  const [sessionId,  setSessionId]  = useState<string | null>(null);
-  const [uid,        setUid]        = useState<string | null>(null);
-  const [activeCard, setActiveCard] = useState<ActiveCardState | null>(null);
-
-  const unsubRef = useRef<(() => void) | null>(null);
-
-  // ── Entra na sessão pelo código ──
-  const enter = useCallback(async (code: string) => {
-    setPhase('loading');
-    try {
-      const sid = await resolveSessionCode(code);
-      if (!sid) {
-        setErrorMsg('Código inválido. Verifique com o apresentador.');
-        setPhase('error');
-        return;
-      }
-
-      const userId = await signInAnon();
-      await joinSession(sid, userId);
-
-      setSessionId(sid);
-      setUid(userId);
-      setPhase('waiting');
-
-      // Inicia listener do card ativo
-      unsubRef.current = listenActiveCard(sid, async (cardId) => {
-        if (!cardId) {
-          setPhase('waiting');
-          setActiveCard(null);
-          return;
+    const unsubscribe = onValue(sessionRef, (snapshot) => {
+      const data = snapshot.val();
+      setSessionData(data);
+      
+      if (data && data.currentInteraction) {
+        const currentId = data.currentInteraction;
+        const myVote = data.responses?.[currentId]?.[participantId];
+        
+        if (myVote !== undefined) {
+          setHasVoted(true);
+          setVotedOption(myVote);
+        } else {
+          setHasVoted(false);
+          setVotedOption(null);
         }
+      }
+      setLoading(false);
+    });
 
-        // Carrega os dados do card
-        const cardSnap = await get(Refs.card(sid, cardId));
-        if (!cardSnap.exists()) return;
-        const card = cardSnap.val() as Card;
+    return () => unsubscribe();
+  }, [sessionId, participantId]);
 
-        // Verifica se já votou neste card
-        const respSnap = await get(Refs.response(sid, cardId, userId));
-        const myVote = respSnap.exists()
-          ? (respSnap.val() as Response).value as string
-          : null;
-
-        setActiveCard({ cardId, card, myVote });
-        setPhase(myVote ? 'answered' : 'answering');
-      });
-    } catch (err) {
-      console.error('[Participant] Erro ao entrar:', err);
-      setErrorMsg('Erro de conexão. Tente novamente.');
-      setPhase('error');
-    }
-  }, []);
-
-  // ── Envia voto ──
-  const vote = useCallback(async (optionId: string) => {
-    if (!sessionId || !uid || !activeCard || activeCard.myVote) return;
-
-    // Optimistic update — UI responde imediatamente
-    setActiveCard(prev => prev ? { ...prev, myVote: optionId } : prev);
-    setPhase('answered');
-
-    try {
-      await submitResponse(sessionId, activeCard.cardId, uid, optionId);
-    } catch (err) {
-      // Rollback em caso de falha
-      console.error('[Participant] Erro ao votar:', err);
-      setActiveCard(prev => prev ? { ...prev, myVote: null } : prev);
-      setPhase('answering');
-    }
-  }, [sessionId, uid, activeCard]);
-
-  // Cleanup
-  useEffect(() => () => { unsubRef.current?.(); }, []);
-
-  return { phase, errorMsg, activeCard, uid, enter, vote };
-}
-
-// ─────────────────────────────────────────────
-// Sub-componente: entrada do código
-// ─────────────────────────────────────────────
-
-function CodeEntry({ onEnter }: { onEnter: (code: string) => void }) {
-  const [code, setCode] = useState('');
-
-  const handleSubmit = () => {
-    const clean = code.trim().toUpperCase();
-    if (clean.length < 4) return;
-    onEnter(clean);
+  const handleVote = async (optionIndex: number) => {
+    setHasVoted(true);
+    setVotedOption(optionIndex);
+    const db = getDatabase();
+    const currentId = sessionData.currentInteraction;
+    const voteRef = ref(db, `sessions/${sessionId}/responses/${currentId}/${participantId}`);
+    await set(voteRef, optionIndex);
   };
 
-  return (
-    <div style={ui.centerCard}>
-      <h1 style={ui.logoText}>inter<span style={{ color: '#a78bfa' }}>actio</span></h1>
-      <p style={ui.subtitle}>Digite o código da sessão</p>
+  const getOptionLetter = (index: number) => String.fromCharCode(65 + index);
 
-      <input
-        style={ui.codeInput}
-        value={code}
-        onChange={e => setCode(e.target.value.toUpperCase())}
-        onKeyDown={e => e.key === 'Enter' && handleSubmit()}
-        placeholder="ex: BX-4927"
-        maxLength={10}
-        autoFocus
-        autoComplete="off"
-        spellCheck={false}
-      />
-
-      <button
-        style={{ ...ui.primaryBtn, opacity: code.trim().length < 4 ? 0.5 : 1 }}
-        onClick={handleSubmit}
-        disabled={code.trim().length < 4}
-      >
-        Entrar na sessão →
-      </button>
-    </div>
-  );
-}
-
-// ─────────────────────────────────────────────
-// Sub-componente: opção de voto
-// ─────────────────────────────────────────────
-
-const OPTION_COLORS = ['#a78bfa', '#60a5fa', '#34d399', '#fbbf24', '#fb7185'];
-const OPTION_KEYS   = ['opt_a', 'opt_b', 'opt_c', 'opt_d', 'opt_e'];
-
-function VoteOption({
-  optionId, option, index, selected, disabled, onVote,
-}: {
-  optionId: string;
-  option:   CardOption;
-  index:    number;
-  selected: boolean;
-  disabled: boolean;
-  onVote:   (id: string) => void;
-}) {
-  const color = OPTION_COLORS[index % OPTION_COLORS.length];
-  const label = String.fromCharCode(65 + index);
-
-  return (
-    <button
-      onClick={() => !disabled && onVote(optionId)}
-      disabled={disabled}
-      style={{
-        ...ui.optionBtn,
-        borderColor:     selected ? color : 'rgba(255,255,255,0.08)',
-        backgroundColor: selected ? color + '22' : '#1a1927',
-        cursor:          disabled ? 'default' : 'pointer',
-        transform:       selected ? 'scale(1.01)' : 'scale(1)',
-        transition:      'all 0.2s ease',
-      }}
+  // ── COMPONENTE DA LOGO PADRONIZADA ──
+  const Logo = () => (
+    <h1 
+      className="text-3xl sm:text-4xl font-black tracking-tighter text-[#e8e6f0]" 
+      style={{ fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' }}
     >
-      <span style={{ ...ui.optionBadge, backgroundColor: color + '33', color }}>
-        {label}
-      </span>
-      <span style={ui.optionText}>{option.text}</span>
-      {selected && <span style={{ color, fontSize: 20 }}>✓</span>}
-    </button>
+      inter<span className="text-[#a78bfa]">actio</span>
+    </h1>
   );
-}
 
-// ─────────────────────────────────────────────
-// Página principal
-// ─────────────────────────────────────────────
-
-export default function ParticipantPage() {
-  const { phase, errorMsg, activeCard, enter, vote } = useParticipantSession();
-
-  // ── Render por fase ──
-  if (phase === 'enter_code') {
-    return <CodeEntry onEnter={enter} />;
-  }
-
-  if (phase === 'loading') {
+  // ── TELAS DE ESTADO (CARREGANDO / ERRO) ──
+  if (loading) {
     return (
-      <div style={ui.centerCard}>
-        <div style={ui.spinner} />
-        <p style={ui.subtitle}>Conectando…</p>
+      <div className="min-h-screen bg-[#0f0e17] flex flex-col items-center justify-center p-6 text-center">
+        <div className="w-12 h-12 border-4 border-[#a78bfa]/30 border-t-[#a78bfa] rounded-full animate-spin mb-6 shadow-[0_0_15px_rgba(167,139,250,0.5)]"></div>
+        <p className="text-[#e8e6f0] text-lg font-semibold tracking-wide">A conectar ao telão...</p>
       </div>
     );
   }
 
-  if (phase === 'error') {
+  if (!sessionData) {
     return (
-      <div style={ui.centerCard}>
-        <p style={{ ...ui.subtitle, color: '#fb7185' }}>⚠ {errorMsg}</p>
-        <button style={ui.primaryBtn} onClick={() => window.location.reload()}>
-          Tentar novamente
-        </button>
-      </div>
-    );
-  }
-
-  if (phase === 'waiting' || !activeCard) {
-    return (
-      <div style={ui.centerCard}>
-        <div style={ui.waitingPulse} />
-        <p style={ui.titleText}>Aguardando o apresentador…</p>
-        <p style={ui.subtitle}>A próxima pergunta aparecerá aqui automaticamente.</p>
-      </div>
-    );
-  }
-
-  const { card, myVote, cardId } = activeCard;
-  const optionEntries = card.options
-    ? OPTION_KEYS
-        .filter(k => card.options![k])
-        .map(k => ({ id: k, option: card.options![k] }))
-    : [];
-
-  return (
-    <div style={ui.page}>
-      {/* Pergunta */}
-      <div style={ui.questionCard}>
-        <span style={ui.typeBadge}>📊 Múltipla escolha</span>
-        <h2 style={ui.questionText}>{card.question}</h2>
-      </div>
-
-      {/* Opções */}
-      <div style={ui.optionsList}>
-        {optionEntries.map(({ id, option }, i) => (
-          <VoteOption
-            key={id}
-            optionId={id}
-            option={option}
-            index={i}
-            selected={myVote === id}
-            disabled={!!myVote}
-            onVote={vote}
-          />
-        ))}
-      </div>
-
-      {/* Feedback pós-voto */}
-      {phase === 'answered' && (
-        <div style={ui.answeredBanner}>
-          <span style={{ fontSize: 24 }}>✓</span>
-          <div>
-            <p style={{ margin: 0, fontWeight: 700, color: '#34d399' }}>Resposta registrada!</p>
-            <p style={{ margin: 0, fontSize: 13, color: '#8b89a0' }}>
-              Aguarde a próxima pergunta.
-            </p>
-          </div>
+      <div className="min-h-screen bg-[#0f0e17] flex flex-col items-center justify-center p-6 text-center">
+        <div className="w-24 h-24 bg-red-500/10 border border-red-500/20 rounded-full flex items-center justify-center mb-6">
+          <span className="text-[#ef4444] text-5xl">✖</span>
         </div>
-      )}
+        <p className="text-[#e8e6f0] text-3xl font-bold mb-2">Sessão Encerrada</p>
+        <p className="text-[#8b89a0] text-lg">Verifique o código ou peça ajuda ao professor.</p>
+      </div>
+    );
+  }
+
+  const currentInteraction = sessionData?.interactions?.[sessionData?.currentInteraction];
+
+  // ── RENDERIZAÇÃO PRINCIPAL ──
+  return (
+    <div className="min-h-screen bg-[#0f0e17] relative overflow-hidden flex flex-col font-sans">
+      
+      {/* ── EFEITOS DE LUZ NO FUNDO (NEON BLUR) ── */}
+      <div className="absolute top-[-10%] left-[-10%] w-[500px] h-[500px] bg-[#a78bfa] rounded-full mix-blend-screen filter blur-[150px] opacity-10 pointer-events-none"></div>
+      <div className="absolute bottom-[-10%] right-[-10%] w-[500px] h-[500px] bg-[#38bdf8] rounded-full mix-blend-screen filter blur-[150px] opacity-[0.07] pointer-events-none"></div>
+
+      {/* ── HEADER ── */}
+      <header className="flex justify-between items-center p-6 sm:px-10 border-b border-white/5 bg-[#0f0e17]/60 backdrop-blur-xl relative z-20">
+        <Logo />
+        <div className="bg-[#a78bfa]/10 border border-[#a78bfa]/20 px-4 py-2 rounded-xl shadow-[0_0_10px_rgba(167,139,250,0.1)]">
+          <span className="text-[#a78bfa] text-xs sm:text-sm font-black tracking-widest uppercase">
+            Sala: {sessionId}
+          </span>
+        </div>
+      </header>
+
+      {/* ── ÁREA CENTRAL (CARTÃO DE INTERAÇÃO FLUTUANTE) ── */}
+      <main className="flex-1 flex flex-col justify-center items-center p-4 sm:p-6 relative z-10 w-full max-w-2xl mx-auto">
+        
+        <div className="w-full bg-[#1a1924]/80 backdrop-blur-2xl border border-white/5 rounded-[32px] p-6 sm:p-12 shadow-2xl">
+          
+          {/* ESTADO: AGUARDANDO PERGUNTA */}
+          {!currentInteraction && (
+            <div className="flex flex-col items-center text-center py-10">
+              <div className="w-24 h-24 rounded-full bg-[#a78bfa]/10 flex items-center justify-center mb-8 border border-[#a78bfa]/20 animate-pulse">
+                <span className="text-[#a78bfa] text-4xl">⏳</span>
+              </div>
+              <h2 className="text-[#e8e6f0] text-3xl font-bold mb-3 tracking-tight">Olhe para o telão!</h2>
+              <p className="text-[#8b89a0] text-lg">Aguarde o professor iniciar a votação.</p>
+            </div>
+          )}
+
+          {/* ESTADO: VOTO COMPUTADO */}
+          {currentInteraction && hasVoted && (
+            <div className="flex flex-col items-center text-center py-10 animate-in fade-in zoom-in duration-500">
+              <div className="w-28 h-28 rounded-full bg-emerald-500/10 flex items-center justify-center mb-8 border border-emerald-500/30 shadow-[0_0_30px_rgba(16,185,129,0.2)]">
+                <span className="text-emerald-400 text-6xl">✓</span>
+              </div>
+              <h2 className="text-[#e8e6f0] text-3xl font-bold mb-4 tracking-tight">Voto Confirmado!</h2>
+              <p className="text-[#8b89a0] text-lg leading-relaxed">
+                Você escolheu a <span className="text-[#a78bfa] font-bold">Opção {getOptionLetter(votedOption!)}</span>. Acompanhe os resultados ao vivo no telão.
+              </p>
+            </div>
+          )}
+
+          {/* ESTADO: PERGUNTA ATIVA PARA VOTAR */}
+          {currentInteraction && !hasVoted && (
+            <div className="animate-in fade-in slide-in-from-bottom-8 duration-500 w-full">
+              <h2 className="text-[#e8e6f0] text-2xl sm:text-4xl font-black leading-snug mb-10 tracking-tight text-center">
+                {currentInteraction.question}
+              </h2>
+              
+              <div className="flex flex-col gap-5">
+                {currentInteraction.options.map((option: string, index: number) => (
+                  <button 
+                    key={index}
+                    onClick={() => handleVote(index)}
+                    className="group relative w-full flex items-center text-left bg-[#0f0e17]/50 rounded-2xl p-4 sm:p-5 border border-white/5 hover:border-[#a78bfa]/60 hover:bg-[#a78bfa]/5 transition-all duration-300 ease-out active:scale-[0.98] overflow-hidden"
+                  >
+                    {/* Efeito Hover Glow dentro do botão */}
+                    <div className="absolute inset-0 bg-gradient-to-r from-[#a78bfa]/0 via-[#a78bfa]/5 to-[#a78bfa]/0 opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+                    
+                    <div className="w-14 h-14 sm:w-16 sm:h-16 shrink-0 rounded-xl bg-[#1a1924] border border-white/10 flex items-center justify-center mr-5 group-hover:border-[#a78bfa]/40 transition-colors shadow-inner">
+                      <span className="text-[#a78bfa] text-xl sm:text-2xl font-black">
+                        {getOptionLetter(index)}
+                      </span>
+                    </div>
+                    <span className="text-[#e8e6f0] text-[17px] sm:text-xl font-semibold pr-3 relative z-10">
+                      {option}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+        </div>
+      </main>
     </div>
   );
 }
-
-// ─────────────────────────────────────────────
-// Estilos inline (CSSProperties)
-// ─────────────────────────────────────────────
-
-const ui: Record<string, React.CSSProperties> = {
-  page: {
-    minHeight:       '100dvh',
-    backgroundColor: '#0f0e17',
-    padding:         '20px 16px 40px',
-    maxWidth:        480,
-    margin:          '0 auto',
-  },
-  centerCard: {
-    minHeight:      '100dvh',
-    display:        'flex',
-    flexDirection:  'column',
-    alignItems:     'center',
-    justifyContent: 'center',
-    gap:            20,
-    padding:        '0 24px',
-    backgroundColor: '#0f0e17',
-  },
-  logoText: {
-    fontFamily:  'sans-serif',
-    fontSize:    32,
-    fontWeight:  700,
-    color:       '#e8e6f0',
-    margin:      0,
-    letterSpacing: '-0.04em',
-  },
-  titleText: {
-    fontSize:   22,
-    fontWeight: 700,
-    color:      '#e8e6f0',
-    margin:     0,
-    textAlign:  'center',
-  },
-  subtitle: {
-    fontSize:  15,
-    color:     '#8b89a0',
-    margin:    0,
-    textAlign: 'center',
-  },
-  codeInput: {
-    width:           '100%',
-    maxWidth:        280,
-    backgroundColor: '#1a1927',
-    border:          '1.5px solid rgba(255,255,255,0.12)',
-    borderRadius:    12,
-    padding:         '16px 20px',
-    color:           '#e8e6f0',
-    fontSize:        24,
-    fontWeight:      700,
-    letterSpacing:   '0.12em',
-    textAlign:       'center',
-    outline:         'none',
-    fontFamily:      'monospace',
-  },
-  primaryBtn: {
-    width:           '100%',
-    maxWidth:        280,
-    backgroundColor: '#a78bfa',
-    border:          'none',
-    borderRadius:    12,
-    padding:         '16px 24px',
-    color:           '#0f0e17',
-    fontSize:        16,
-    fontWeight:      700,
-    cursor:          'pointer',
-  },
-  spinner: {
-    width:       40,
-    height:      40,
-    border:      '3px solid rgba(167,139,250,0.2)',
-    borderTop:   '3px solid #a78bfa',
-    borderRadius: '50%',
-    animation:   'spin 0.8s linear infinite',
-  },
-  waitingPulse: {
-    width:        60,
-    height:       60,
-    borderRadius: '50%',
-    backgroundColor: 'rgba(167,139,250,0.2)',
-    animation:    'pulse 2s ease-in-out infinite',
-  },
-  questionCard: {
-    backgroundColor: '#1a1927',
-    borderRadius:    16,
-    padding:         '20px',
-    marginBottom:    20,
-    border:          '1px solid rgba(255,255,255,0.07)',
-  },
-  typeBadge: {
-    display:         'inline-block',
-    backgroundColor: 'rgba(167,139,250,0.15)',
-    color:           '#a78bfa',
-    borderRadius:    100,
-    padding:         '4px 12px',
-    fontSize:        12,
-    fontWeight:      700,
-    marginBottom:    12,
-  },
-  questionText: {
-    fontSize:   20,
-    fontWeight: 700,
-    color:      '#e8e6f0',
-    margin:     0,
-    lineHeight: 1.4,
-  },
-  optionsList: {
-    display:       'flex',
-    flexDirection: 'column',
-    gap:           10,
-  },
-  optionBtn: {
-    display:        'flex',
-    alignItems:     'center',
-    gap:            12,
-    width:          '100%',
-    backgroundColor: '#1a1927',
-    border:         '1.5px solid rgba(255,255,255,0.08)',
-    borderRadius:   12,
-    padding:        '14px 16px',
-    textAlign:      'left',
-  },
-  optionBadge: {
-    width:          32,
-    height:         32,
-    borderRadius:   8,
-    display:        'flex',
-    alignItems:     'center',
-    justifyContent: 'center',
-    fontSize:       13,
-    fontWeight:     700,
-    flexShrink:     0,
-  },
-  optionText: {
-    flex:       1,
-    fontSize:   15,
-    color:      '#e8e6f0',
-    fontWeight: 500,
-    textAlign:  'left',
-  },
-  answeredBanner: {
-    display:        'flex',
-    alignItems:     'center',
-    gap:            14,
-    backgroundColor: 'rgba(52,211,153,0.1)',
-    border:         '1px solid rgba(52,211,153,0.2)',
-    borderRadius:   12,
-    padding:        '16px 18px',
-    marginTop:      20,
-  },
-};

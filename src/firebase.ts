@@ -1,14 +1,8 @@
-// packages/firebase/config.ts
-// Configuração central do Firebase — importada pelos três apps.
-
 import { getApp, getApps, initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously } from 'firebase/auth';
-import { get, getDatabase, off, onValue, push, ref, set, update } from 'firebase/database';
+import { getDatabase, ref, get, off, onValue, push, set, update } from 'firebase/database';
 import type { Card, Response, Session } from './types';
 
-// ─────────────────────────────────────────────
-// Inicialização (singleton — evita reinit no hot-reload)
-// ─────────────────────────────────────────────
 
 const firebaseConfig = {
   apiKey: "AIzaSyB8ajCQBTRYqbk7QMJHrr7XBhOl2iJigq0",
@@ -17,16 +11,13 @@ const firebaseConfig = {
   storageBucket: "interactio-85336.firebasestorage.app",
   messagingSenderId: "710301574624",
   appId: "1:710301574624:web:0589c17b26fca67d77b785",
-  measurementId: "G-WKN6RJTZ04"
+  measurementId: "G-WKN6RJTZ04",
+  databaseURL: "https://interactio-85336-default-rtdb.firebaseio.com" 
 };
 
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 export const db   = getDatabase(app);
 export const auth = getAuth(app);
-
-// ─────────────────────────────────────────────
-// Refs tipadas — centralizam os caminhos do DB
-// ─────────────────────────────────────────────
 
 export const Refs = {
   session:      (sid: string)               => ref(db, `interactio/sessions/${sid}`),
@@ -43,23 +34,11 @@ export const Refs = {
   codeToId:     (code: string)              => ref(db, `interactio/sessionCodes/${code}`),
 };
 
-// ─────────────────────────────────────────────
-// Auth — login anônimo para participantes
-// ─────────────────────────────────────────────
-
 export async function signInAnon(): Promise<string> {
   const { user } = await signInAnonymously(auth);
   return user.uid;
 }
 
-// ─────────────────────────────────────────────
-// API do Admin
-// ─────────────────────────────────────────────
-
-/**
- * Adiciona um card à sessão e retorna o ID gerado pelo Firebase.
- * O card é salvo com status 'draft' — só vai ao ar quando setActiveCard() for chamado.
- */
 export async function addCardToSession(sessionId: string, card: Card): Promise<string> {
   const cardsRef = Refs.cards(sessionId);
   const newCardRef = push(cardsRef);               // gera ID único
@@ -67,11 +46,6 @@ export async function addCardToSession(sessionId: string, card: Card): Promise<s
   return newCardRef.key!;
 }
 
-/**
- * Ativa um card: atualiza activeCardId na sessão e
- * muda o status do card anterior para 'closed' e do novo para 'active'.
- * Operação atômica via multi-path update.
- */
 export async function setActiveCard(
   sessionId:     string,
   newCardId:     string,
@@ -87,23 +61,12 @@ export async function setActiveCard(
   await update(ref(db), updates);
 }
 
-// ─────────────────────────────────────────────
-// API do Participante
-// ─────────────────────────────────────────────
-
-/**
- * Resolve o código curto (ex: "BX-4927") para o sessionId interno.
- * Retorna null se o código não existir.
- */
 export async function resolveSessionCode(code: string): Promise<string | null> {
-  const snap = await get(Refs.codeToId(code.toUpperCase()));
-  return snap.exists() ? (snap.val() as string) : null;
+  const db = getDatabase();
+  const snap = await get(ref(db, `sessions/${code}`));
+  return snap.exists() ? code : null;
 }
 
-/**
- * Registra a presença do participante.
- * onDisconnect garante remoção automática ao fechar o browser/app.
- */
 export async function joinSession(sessionId: string, uid: string): Promise<void> {
   const { onDisconnect } = await import('firebase/database');
   const presenceRef = Refs.participant(sessionId, uid);
@@ -115,10 +78,6 @@ export async function joinSession(sessionId: string, uid: string): Promise<void>
   onDisconnect(presenceRef).remove();
 }
 
-/**
- * Envia a resposta do participante para um card.
- * A chave é o uid — garante exatamente 1 resposta por usuário por card.
- */
 export async function submitResponse(
   sessionId: string,
   cardId:    string,
@@ -132,14 +91,6 @@ export async function submitResponse(
   await set(Refs.response(sessionId, cardId, uid), responsePayload);
 }
 
-// ─────────────────────────────────────────────
-// Listeners em tempo real
-// ─────────────────────────────────────────────
-
-/**
- * Ouve mudanças no activeCardId.
- * Retorna função de unsubscribe para limpar no useEffect.
- */
 export function listenActiveCard(
   sessionId: string,
   callback:  (cardId: string | null) => void,
@@ -149,10 +100,6 @@ export function listenActiveCard(
   return () => off(r, 'value', handler);
 }
 
-/**
- * Ouve mudanças nas respostas de um card específico.
- * O Telão usa este listener para atualizar o gráfico em tempo real.
- */
 export function listenResponses(
   sessionId: string,
   cardId:    string,
@@ -165,10 +112,6 @@ export function listenResponses(
   return () => off(r, 'value', handler);
 }
 
-/**
- * Ouve a sessão inteira (meta + activeCardId + cards).
- * Usado pelo Telão para carregar a estrutura inicial.
- */
 export function listenSession(
   sessionId: string,
   callback:  (session: Session | null) => void,

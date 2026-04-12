@@ -1,64 +1,85 @@
-import Image from "next/image";
+'use client';
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 
 export default function Home() {
+  const [code, setCode] = useState('');
+  const [isJoining, setIsJoining] = useState(false);
+  const router = useRouter();
+
+  const handleJoin = (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    // Limpa espaços e deixa tudo maiúsculo
+    const cleanCode = code.trim().toUpperCase().replace(/\s+/g, '');
+    
+    if (cleanCode.length > 3) {
+      setIsJoining(true);
+      // Redireciona o aluno para a pasta dinâmica da sala
+      router.push(`/p/${cleanCode}`);
+    }
+  };
+
+  // ── COMPONENTE DA LOGO PADRONIZADA ──
+  const Logo = () => (
+    <h1 
+      className="text-5xl font-black tracking-tighter text-[#e8e6f0] mb-8" 
+      style={{ fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' }}
+    >
+      inter<span className="text-[#a78bfa]">actio</span>
+    </h1>
+  );
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+    <div className="min-h-screen bg-[#0f0e17] relative overflow-hidden flex flex-col font-sans items-center justify-center p-6">
+      
+      {/* ── EFEITOS DE LUZ NO FUNDO (NEON BLUR) ── */}
+      <div className="absolute top-[-10%] left-[-10%] w-[500px] h-[500px] bg-[#a78bfa] rounded-full mix-blend-screen filter blur-[150px] opacity-10 pointer-events-none"></div>
+      <div className="absolute bottom-[-10%] right-[-10%] w-[500px] h-[500px] bg-[#38bdf8] rounded-full mix-blend-screen filter blur-[150px] opacity-[0.07] pointer-events-none"></div>
+
+      {/* ── CARTÃO CENTRAL DE ACESSO (GLASSMORPHISM) ── */}
+      <main className="relative z-10 w-full max-w-md flex flex-col items-center">
+        
+        <Logo />
+
+        <div className="w-full bg-[#1a1924]/80 backdrop-blur-2xl border border-white/5 rounded-[32px] p-8 sm:p-10 shadow-2xl text-center">
+          <h2 className="text-[#e8e6f0] text-2xl font-bold mb-2 tracking-tight">
+            Entrar na Sessão
+          </h2>
+          <p className="text-[#8b89a0] mb-8">
+            Digite o código que aparece no telão.
           </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
+
+          <form onSubmit={handleJoin} className="flex flex-col gap-4">
+            <input
+              type="text"
+              placeholder="Ex: AB-1234"
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              disabled={isJoining}
+              className="w-full bg-[#0f0e17] border border-white/10 rounded-2xl p-5 text-center text-2xl font-black text-[#e8e6f0] tracking-[0.2em] uppercase placeholder:text-[#5a5872] placeholder:font-semibold placeholder:tracking-normal focus:outline-none focus:border-[#a78bfa]/50 focus:ring-1 focus:ring-[#a78bfa]/50 transition-all"
+              autoComplete="off"
+              maxLength={8}
             />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+
+            <button
+              type="submit"
+              disabled={isJoining || code.trim().length < 4}
+              className="w-full bg-[#a78bfa] text-[#0f0e17] text-lg font-black rounded-2xl p-5 shadow-[0_8px_20px_rgba(167,139,250,0.25)] hover:bg-[#b8a1fa] active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed flex justify-center items-center h-[68px]"
+            >
+              {isJoining ? (
+                <div className="w-6 h-6 border-4 border-[#0f0e17]/30 border-t-[#0f0e17] rounded-full animate-spin"></div>
+              ) : (
+                "Participar Agora"
+              )}
+            </button>
+          </form>
         </div>
+
+        <p className="text-[#5a5872] text-sm mt-12 font-medium">
+          Interactio OS • Plataforma para Estudantes
+        </p>
+
       </main>
     </div>
   );

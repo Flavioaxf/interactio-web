@@ -11,7 +11,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { listenActiveCard, listenResponses, listenSession } from '../../../src/3_firebase';
+import { listenActiveCard, listenResponses, listenSession } from '../../../src/firebase';
 import type { Card, CardMap, Response, SessionMeta } from '../../../src/types';
 
 // ─────────────────────────────────────────────
