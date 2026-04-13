@@ -6,10 +6,13 @@ import { getAuth, signInAnonymously } from 'firebase/auth';
 import { get, getDatabase, off, onValue, push, ref, set, update } from 'firebase/database';
 import type { Card, Response, Session } from './types';
 
+<<<<<<< Updated upstream:src/3_firebase.ts
 // ─────────────────────────────────────────────
 // Inicialização (singleton — evita reinit no hot-reload)
 // ─────────────────────────────────────────────
 
+=======
+>>>>>>> Stashed changes:src/firebase.ts
 const firebaseConfig = {
   apiKey: "AIzaSyB8ajCQBTRYqbk7QMJHrr7XBhOl2iJigq0",
   authDomain: "interactio-85336.firebaseapp.com",
@@ -20,7 +23,8 @@ const firebaseConfig = {
   measurementId: "G-WKN6RJTZ04"
 };
 
-const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+// ── CORREÇÃO: Mantida apenas a inicialização segura de 'app' ──
+export const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 export const db   = getDatabase(app);
 export const auth = getAuth(app);
 
