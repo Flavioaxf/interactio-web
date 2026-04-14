@@ -1,8 +1,7 @@
 import { getApp, getApps, initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously } from 'firebase/auth';
-import { getDatabase, ref, get, off, onValue, push, set, update } from 'firebase/database';
+import { getDatabase, ref, get, off, onValue, push, set, update, remove } from 'firebase/database';
 import type { Card, Response, Session } from './types';
-
 
 const firebaseConfig = {
   apiKey: "AIzaSyB8ajCQBTRYqbk7QMJHrr7XBhOl2iJigq0",
@@ -63,7 +62,7 @@ export async function setActiveCard(
 
 export async function resolveSessionCode(code: string): Promise<string | null> {
   const db = getDatabase();
-  const snap = await get(ref(db, `sessions/${code}`));
+  const snap = await get(ref(db, `interactio/sessions/${code}`)); 
   return snap.exists() ? code : null;
 }
 
@@ -76,6 +75,16 @@ export async function joinSession(sessionId: string, uid: string): Promise<void>
     online:      true,
   });
   onDisconnect(presenceRef).remove();
+}
+
+export async function leaveSession(sessionId: string, uid: string) {
+  const presenceRef = ref(db, `interactio/sessions/${sessionId}/participants/${uid}`);
+  try {
+    await remove(presenceRef);
+    console.log("Participante removido com sucesso");
+  } catch (error) {
+    console.error("Erro ao remover participante:", error);
+  }
 }
 
 export async function submitResponse(

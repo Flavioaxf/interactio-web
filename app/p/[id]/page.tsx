@@ -1,7 +1,8 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { ref, onValue, set } from 'firebase/database';
+// 1. Adicionamos remove e onDisconnect nas importações
+import { ref, onValue, set, remove, onDisconnect } from 'firebase/database';
 import { db } from '../../../src/firebase'; 
 import { ChevronLeft } from 'lucide-react'; 
 
@@ -30,7 +31,15 @@ export default function ParticipantSession() {
   useEffect(() => {
     if (!sessionId || !participantId) return;
     
-    const sessionRef = ref(db, `sessions/${sessionId}`);
+    // 2. Corrigido o caminho raiz para incluir "interactio/"
+    const sessionRef = ref(db, `interactio/sessions/${sessionId}`);
+    const presenceRef = ref(db, `interactio/sessions/${sessionId}/participants/${participantId}`);
+
+    // ── LÓGICA DE PRESENÇA ──
+    // Avisa que entrou
+    set(presenceRef, true);
+    // Configura o Firebase para apagar se a internet cair (fallback)
+    onDisconnect(presenceRef).remove();
 
     const unsubscribe = onValue(sessionRef, (snapshot) => {
       const data = snapshot.val();
@@ -51,7 +60,11 @@ export default function ParticipantSession() {
       setLoading(false);
     });
 
-    return () => unsubscribe();
+    // ── LÓGICA DE SAÍDA (CLEANUP) ──
+    return () => {
+      unsubscribe(); // Para de ouvir as mudanças
+      remove(presenceRef); // Remove o participante instantaneamente ao sair da tela
+    };
   }, [sessionId, participantId]);
 
   const handleExit = () => router.replace('/');
@@ -67,7 +80,8 @@ export default function ParticipantSession() {
     if (!participantId) return;
     setMyResponse(optionIndex);
     const currentIndex = sessionData.currentInteraction ?? 0;
-    await set(ref(db, `sessions/${sessionId}/responses/${currentIndex}/${participantId}`), optionIndex);
+    // Corrigido o caminho da resposta
+    await set(ref(db, `interactio/sessions/${sessionId}/responses/${currentIndex}/${participantId}`), optionIndex);
   };
 
   const handleSubmitWord = async (e: React.FormEvent) => {
@@ -85,7 +99,8 @@ export default function ParticipantSession() {
     const newWords = [...currentWords, cleanWord];
     setMyResponse(newWords);
     setWordInput(''); 
-    await set(ref(db, `sessions/${sessionId}/responses/${currentIndex}/${participantId}`), newWords);
+    // Corrigido o caminho da resposta
+    await set(ref(db, `interactio/sessions/${sessionId}/responses/${currentIndex}/${participantId}`), newWords);
   };
 
   const handleSubmitQuestion = async (e: React.FormEvent) => {
@@ -99,7 +114,8 @@ export default function ParticipantSession() {
     const newQuestions = [...currentQuestions, cleanQuestion];
     setMyResponse(newQuestions);
     setQuestionInput(''); 
-    await set(ref(db, `sessions/${sessionId}/responses/${currentIndex}/${participantId}`), newQuestions);
+    // Corrigido o caminho da resposta
+    await set(ref(db, `interactio/sessions/${sessionId}/responses/${currentIndex}/${participantId}`), newQuestions);
   };
 
   if (loading || !participantId) {
