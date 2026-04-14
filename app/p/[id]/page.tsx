@@ -15,7 +15,6 @@ export default function ParticipantSession() {
   const [participantId, setParticipantId] = useState<string>('');
   const [myResponse, setMyResponse] = useState<any>(null);
   
-  // Inputs para os diferentes modos
   const [wordInput, setWordInput] = useState('');
   const [questionInput, setQuestionInput] = useState('');
 
@@ -64,7 +63,6 @@ export default function ParticipantSession() {
     </h1>
   );
 
-  // ── HANDLERS DE ENVIO ──
   const handleVoteMultipleChoice = async (optionIndex: number) => {
     if (!participantId) return;
     setMyResponse(optionIndex);
@@ -113,6 +111,22 @@ export default function ParticipantSession() {
     );
   }
 
+  // ── 1. EXPULSA O ALUNO QUANDO A SESSÃO É ENCERRADA ──
+  if (sessionData?.status === 'finished') {
+    return (
+      <div className="min-h-screen bg-[#0f0e17] flex flex-col items-center justify-center p-6 text-center">
+        <div className="w-20 h-20 bg-amber-500/10 border border-amber-500/20 rounded-full flex items-center justify-center mb-6">
+          <span className="text-[#fbbf24] text-4xl">✓</span>
+        </div>
+        <p className="text-[#e8e6f0] text-2xl font-bold mb-2 tracking-tight">Sessão Encerrada</p>
+        <p className="text-[#8b89a0] mb-8">Esta apresentação já foi finalizada pelo professor.</p>
+        <button onClick={handleExit} className="flex items-center gap-2 bg-white/5 border border-white/10 px-6 py-3 rounded-xl text-[#e8e6f0] font-semibold hover:bg-white/10 transition-colors">
+          <ChevronLeft size={20} /> Voltar ao Início
+        </button>
+      </div>
+    );
+  }
+
   if (!sessionData || !sessionData.interactions) {
     return (
       <div className="min-h-screen bg-[#0f0e17] flex flex-col items-center justify-center p-6 text-center">
@@ -130,12 +144,9 @@ export default function ParticipantSession() {
   const currentIndex = sessionData.currentInteraction ?? 0;
   const currentInteraction = sessionData.interactions[currentIndex];
   
-  // ── NORMALIZAÇÃO DO TIPO DE INTERAÇÃO ──
   const rawType = currentInteraction?.type || 'multiple_choice';
   const typeWordCloud = rawType === 'word_cloud';
   const typeMultipleChoice = rawType === 'multiple_choice';
-  
-  // O SEGREDO: Aceita ambos os nomes para que funcione a partir do Studio
   const typeQnA = rawType === 'qna' || rawType === 'q_and_a'; 
   
   const isMultipleChoiceVoted = typeMultipleChoice && myResponse !== null;
@@ -143,16 +154,13 @@ export default function ParticipantSession() {
   const myAnswersCount = Array.isArray(myResponse) ? myResponse.length : 0;
   const isWordCloudFull = typeWordCloud && wordLimit !== 'unlimited' && myAnswersCount >= wordLimit;
 
-  // Lógica Inteligente para o Título
   const getDisplayTitle = () => {
     if (currentInteraction?.question && currentInteraction.question.trim() !== '') {
       return currentInteraction.question;
     }
-    
     if (typeQnA) return 'Espaço de Resposta Aberta';
     if (typeWordCloud) return 'Envie suas palavras';
     if (typeMultipleChoice) return 'Escolha uma opção';
-    
     return 'Aguardando próxima etapa...';
   };
 
@@ -186,7 +194,6 @@ export default function ParticipantSession() {
             {getDisplayTitle()}
           </h2>
 
-          {/* 1. MÚLTIPLA ESCOLHA */}
           {typeMultipleChoice && (
             isMultipleChoiceVoted ? (
               <div className="flex flex-col items-center text-center py-6 animate-in fade-in zoom-in duration-500">
@@ -210,7 +217,6 @@ export default function ParticipantSession() {
             )
           )}
 
-          {/* 2. NUVEM DE PALAVRAS */}
           {typeWordCloud && (
             <div className="animate-in fade-in slide-in-from-bottom-8">
               <div className="flex flex-col sm:flex-row justify-between items-center mb-4 gap-2 px-1">
@@ -238,7 +244,6 @@ export default function ParticipantSession() {
             </div>
           )}
 
-          {/* 3. MÓDULO DE RESPOSTA LIVRE (DISCURSIVA) */}
           {typeQnA && (
             <div className="animate-in fade-in slide-in-from-bottom-8">
               <div className="flex justify-between items-center mb-4 px-1">
