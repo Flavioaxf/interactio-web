@@ -1,7 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-// 1. Adicionamos remove e onDisconnect nas importações
 import { ref, onValue, set, remove, onDisconnect } from 'firebase/database';
 import { db } from '../../../src/firebase'; 
 import { ChevronLeft } from 'lucide-react'; 
@@ -31,15 +30,23 @@ export default function ParticipantSession() {
   useEffect(() => {
     if (!sessionId || !participantId) return;
     
-    // 2. Corrigido o caminho raiz para incluir "interactio/"
-    const sessionRef = ref(db, `interactio/sessions/${sessionId}`);
-    const presenceRef = ref(db, `interactio/sessions/${sessionId}/participants/${participantId}`);
+    // 🔥 CORRIGIDO: Voltamos para o caminho original que o seu Admin usa!
+    const sessionRef = ref(db, `sessions/${sessionId}`);
+    const presenceRef = ref(db, `sessions/${sessionId}/participants/${participantId}`);
 
     // ── LÓGICA DE PRESENÇA ──
-    // Avisa que entrou
+    // ── LÓGICA DE PRESENÇA ──
     set(presenceRef, true);
-    // Configura o Firebase para apagar se a internet cair (fallback)
     onDisconnect(presenceRef).remove();
+
+    // Função que atira a remoção para o Firebase
+    const forceCleanup = () => {
+      remove(presenceRef);
+    };
+
+    // Ouve quando o navegador do celular tenta congelar ou fechar a aba
+    window.addEventListener('beforeunload', forceCleanup);
+    window.addEventListener('pagehide', forceCleanup);
 
     const unsubscribe = onValue(sessionRef, (snapshot) => {
       const data = snapshot.val();
@@ -62,12 +69,22 @@ export default function ParticipantSession() {
 
     // ── LÓGICA DE SAÍDA (CLEANUP) ──
     return () => {
-      unsubscribe(); // Para de ouvir as mudanças
-      remove(presenceRef); // Remove o participante instantaneamente ao sair da tela
+      unsubscribe();
+      forceCleanup(); // Dispara se o React conseguir destruir o componente
+      window.removeEventListener('beforeunload', forceCleanup);
+      window.removeEventListener('pagehide', forceCleanup);
     };
   }, [sessionId, participantId]);
 
-  const handleExit = () => router.replace('/');
+  const handleExit = async () => {
+    // Força a remoção manual no banco antes de mudar de tela
+    if (sessionId && participantId) {
+      const presenceRef = ref(db, `sessions/${sessionId}/participants/${participantId}`);
+      await remove(presenceRef); 
+    }
+    router.replace('/');
+  };
+
   const getOptionLetter = (index: number) => String.fromCharCode(65 + index);
 
   const Logo = () => (
@@ -80,8 +97,8 @@ export default function ParticipantSession() {
     if (!participantId) return;
     setMyResponse(optionIndex);
     const currentIndex = sessionData.currentInteraction ?? 0;
-    // Corrigido o caminho da resposta
-    await set(ref(db, `interactio/sessions/${sessionId}/responses/${currentIndex}/${participantId}`), optionIndex);
+    // 🔥 CORRIGIDO
+    await set(ref(db, `sessions/${sessionId}/responses/${currentIndex}/${participantId}`), optionIndex);
   };
 
   const handleSubmitWord = async (e: React.FormEvent) => {
@@ -99,8 +116,8 @@ export default function ParticipantSession() {
     const newWords = [...currentWords, cleanWord];
     setMyResponse(newWords);
     setWordInput(''); 
-    // Corrigido o caminho da resposta
-    await set(ref(db, `interactio/sessions/${sessionId}/responses/${currentIndex}/${participantId}`), newWords);
+    // 🔥 CORRIGIDO
+    await set(ref(db, `sessions/${sessionId}/responses/${currentIndex}/${participantId}`), newWords);
   };
 
   const handleSubmitQuestion = async (e: React.FormEvent) => {
@@ -114,8 +131,8 @@ export default function ParticipantSession() {
     const newQuestions = [...currentQuestions, cleanQuestion];
     setMyResponse(newQuestions);
     setQuestionInput(''); 
-    // Corrigido o caminho da resposta
-    await set(ref(db, `interactio/sessions/${sessionId}/responses/${currentIndex}/${participantId}`), newQuestions);
+    // 🔥 CORRIGIDO
+    await set(ref(db, `sessions/${sessionId}/responses/${currentIndex}/${participantId}`), newQuestions);
   };
 
   if (loading || !participantId) {
